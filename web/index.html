@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WorkPulse — Agile Kanban Sprint Board & WIP-Limit Enforcer</title>
+  <style>
+    :root {
+      --bg: #080b12;
+      --surface: #111622;
+      --card: #0c101a;
+      --border: #1e283b;
+      --text: #e6edf3;
+      --muted: #8b9bb4;
+      --blue: #3b82f6;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 15px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    header h1 { margin: 0; font-size: 20px; color: var(--blue); }
+    .btn-new { background: var(--blue); color: #fff; border: none; padding: 9px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    .container { max-width: 1400px; margin: 20px auto; padding: 0 18px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 15px; }
+    .kpi .label { font-size: 12px; color: var(--muted); text-transform: uppercase; }
+    .kpi .val { font-size: 25px; font-weight: 800; margin-top: 5px; }
+    .board { display: grid; grid-template-columns: repeat(5, minmax(230px, 1fr)); gap: 14px; overflow-x: auto; padding-bottom: 12px; }
+    .col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; min-height: 460px; display: flex; flex-direction: column; }
+    .col.drag-over { border-color: var(--blue); background: #151d2e; }
+    .col-hdr { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
+    .col-title { font-weight: 800; font-size: 13.5px; }
+    .wip-pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #1c2536; color: var(--muted); }
+    .wip-pill.full { background: rgba(239,68,68,0.2); color: var(--red); }
+    .task-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: grab; transition: transform 0.1s ease; }
+    .task-card:hover { border-color: #364869; transform: translateY(-1px); }
+    .task-top { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--muted); margin-bottom: 5px; }
+    .prio { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 800; }
+    .CRITICAL { background: rgba(239,68,68,0.2); color: var(--red); }
+    .HIGH { background: rgba(245,158,11,0.2); color: var(--amber); }
+    .MEDIUM { background: rgba(59,130,246,0.2); color: #60a5fa; }
+    .LOW { background: rgba(139,155,180,0.2); color: var(--muted); }
+    .task-title { font-weight: 700; font-size: 13.5px; line-height: 1.35; margin-bottom: 8px; }
+    .task-foot { display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--muted); }
+    .step-btns { display: flex; gap: 4px; margin-top: 8px; }
+    .step-btn { flex: 1; background: #161f30; border: 1px solid #26344d; color: var(--text); border-radius: 5px; padding: 4px; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .step-btn:hover { border-color: var(--blue); }
+    .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); align-items: center; justify-content: center; z-index: 50; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; width: 92%; max-width: 420px; }
+    .field { margin-bottom: 11px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .field input, .field select { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border); background: #080b12; color: var(--text); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WorkPulse · Agile Kanban Sprint Board & ACID WIP-Limit Enforcer</h1>
+    <button class="btn-new" onclick="openModal()">+ New Sprint Story</button>
+  </header>
+
+  <div class="container">
+    <div class="kpis">
+      <div class="kpi"><div class="label">Sprint Velocity</div><div class="val" style="color:var(--green)" id="k-vel">0%</div></div>
+      <div class="kpi"><div class="label">Active WIP Load</div><div class="val" style="color:var(--blue)" id="k-wip">0 / 5</div></div>
+      <div class="kpi"><div class="label">Avg Cycle Time (Done)</div><div class="val" style="color:var(--purple)" id="k-cyc">0.0m</div></div>
+      <div class="kpi"><div class="label">Open Critical Blockers</div><div class="val" style="color:var(--red)" id="k-crit">0</div></div>
+    </div>
+
+    <div class="board" id="kanban-board"></div>
+  </div>
+
+  <div class="modal-bg" id="task-modal">
+    <div class="modal">
+      <h2 style="margin-top:0">Create Sprint User Story</h2>
+      <div class="field"><label>Story / Task Title</label><input id="t-title" placeholder="e.g. Implement JWT Refresh Token Rotation" /></div>
+      <div class="field"><label>Assignee</label><input id="t-owner" value="Bharath K" /></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field"><label>Priority</label>
+          <select id="t-prio">
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="HIGH" selected>HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+          </select>
+        </div>
+        <div class="field"><label>Story Points</label><input id="t-pts" type="number" min="1" max="21" value="5" /></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="step-btn" style="padding:9px" onclick="closeModal()">Cancel</button>
+        <button class="btn-new" style="flex:1" onclick="submitTask()">Add to Backlog</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let state = { metrics: {}, columns: [], tasks: [] };
+    let draggedTicketKey = null;
+
+    async function loadState() {
+      const res = await fetch('/api/state');
+      state = await res.json();
+      const m = state.metrics;
+      document.getElementById('k-vel').textContent = `${m.velocityPct}% (${m.donePoints}/${m.totalPoints} pts)`;
+      document.getElementById('k-wip').textContent = `${m.activeWip} / 5`;
+      document.getElementById('k-cyc').textContent = `${m.avgCycleMins} min`;
+      document.getElementById('k-crit').textContent = m.criticalOpen;
+      renderBoard();
+    }
+
+    function renderBoard() {
+      const board = document.getElementById('kanban-board');
+      const colCodes = state.columns.map(c => c.colCode);
+
+      board.innerHTML = state.columns.map((col, colIdx) => {
+        const colTasks = state.tasks.filter(t => t.status === col.colCode);
+        const isFull = col.wipLimit > 0 && colTasks.length >= col.wipLimit;
+        const wipLabel = col.wipLimit > 0 ? `WIP ${colTasks.length}/${col.wipLimit}` : `${colTasks.length}`;
+
+        const cardsHtml = colTasks.map(t => {
+          const prevCol = colIdx > 0 ? colCodes[colIdx - 1] : null;
+          const nextCol = colIdx < colCodes.length - 1 ? colCodes[colIdx + 1] : null;
+          const cycleText = t.cycleMins > 0 ? ` · ⏱ ${t.cycleMins}m` : '';
+
+          return `
+            <div class="task-card" draggable="true" ondragstart="onDragStart(event, '${t.ticketKey}')">
+              <div class="task-top">
+                <strong>${t.ticketKey}</strong>
+                <span class="prio ${t.priority}">${t.priority}</span>
+              </div>
+              <div class="task-title">${t.title}</div>
+              <div class="task-foot">
+                <span>👤 ${t.assignee}${cycleText}</span>
+                <strong>${t.storyPoints} pts</strong>
+              </div>
+              <div class="step-btns">
+                ${prevCol ? `<button class="step-btn" onclick="moveTicket('${t.ticketKey}', '${prevCol}')">← Back</button>` : ''}
+                ${nextCol ? `<button class="step-btn" onclick="moveTicket('${t.ticketKey}', '${nextCol}')">Advance →</button>` : ''}
+              </div>
+            </div>`;
+        }).join('');
+
+        return `
+          <div class="col" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, '${col.colCode}')">
+            <div class="col-hdr">
+              <span class="col-title">${col.colName}</span>
+              <span class="wip-pill ${isFull ? 'full' : ''}">${wipLabel}</span>
+            </div>
+            <div>${cardsHtml}</div>
+          </div>`;
+      }).join('');
+    }
+
+    function onDragStart(ev, ticketKey) {
+      draggedTicketKey = ticketKey;
+      ev.dataTransfer.setData('text/plain', ticketKey);
+    }
+
+    function onDragOver(ev) {
+      ev.preventDefault();
+      ev.currentTarget.classList.add('drag-over');
+    }
+
+    function onDragLeave(ev) {
+      ev.currentTarget.classList.remove('drag-over');
+    }
+
+    async function onDrop(ev, targetColumn) {
+      ev.preventDefault();
+      ev.currentTarget.classList.remove('drag-over');
+      const key = ev.dataTransfer.getData('text/plain') || draggedTicketKey;
+      if (key) {
+        await moveTicket(key, targetColumn);
+      }
+    }
+
+    async function moveTicket(ticketKey, targetColumn) {
+      const res = await fetch('/api/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketKey, targetColumn })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.error);
+      }
+      loadState();
+    }
+
+    function openModal() { document.getElementById('task-modal').style.display = 'flex'; }
+    function closeModal() { document.getElementById('task-modal').style.display = 'none'; }
+
+    async function submitTask() {
+      const payload = {
+        title: document.getElementById('t-title').value,
+        assignee: document.getElementById('t-owner').value,
+        priority: document.getElementById('t-prio').value,
+        storyPoints: document.getElementById('t-pts').value
+      };
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error); return; }
+      document.getElementById('t-title').value = '';
+      closeModal();
+      loadState();
+    }
+
+    loadState();
+    setInterval(loadState, 4000);
+  </script>
+</body>
+</html>

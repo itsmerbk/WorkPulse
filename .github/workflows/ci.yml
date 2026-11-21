@@ -1,0 +1,23 @@
+name: WorkPulse CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+      - name: Compile Java 21 sources
+        run: |
+          mkdir -p out
+          javac -cp "lib/*" -d out src/com/workpulse/*.java
+      - name: Run WorkPulse WIP-Limit & Cycle-Time Assertions
+        run: java -ea --enable-native-access=ALL-UNNAMED -cp "out:lib/*" com.workpulse.WorkPulseTest
